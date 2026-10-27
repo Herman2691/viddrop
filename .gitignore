@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.pyc
+.qodo/
+*.mp4
+*.mp3
+*.webm
+*.m4a
+*.part
+build/
+*.spec
