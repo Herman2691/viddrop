@@ -149,9 +149,9 @@ if not HAS_FFMPEG:
 # ── Format map — tous sans fusion ─────────────────────────────────────────────
 FORMAT_MAP = {
     "Meilleure qualité (sans ffmpeg)": "best",          # fichier unique déjà fusionné
-    "720p (sans ffmpeg)":              "best[height<=720]",
-    "480p":                            "best[height<=480]",
-    "360p":                            "best[height<=360]",
+    "720p (sans ffmpeg)":              "best[height<=720]/best",
+    "480p":                            "best[height<=480]/best",
+    "360p":                            "best[height<=360]/best",
     "Audio seulement (MP3)":           "bestaudio/best",
 }
 
@@ -165,6 +165,13 @@ FORMAT_MAP_FFMPEG = {
 
 # YouTube exige un runtime JavaScript (deno ou node) pour extraire les formats
 JS_RUNTIMES = {rt: {} for rt in ("deno", "node") if shutil.which(rt)}
+if "deno" not in JS_RUNTIMES:
+    # En ligne (Streamlit Cloud), deno est fourni par le paquet pip « deno »
+    try:
+        import deno
+        JS_RUNTIMES["deno"] = {"path": deno.find_deno_bin()}
+    except Exception:
+        pass
 BASE_OPTS = {"js_runtimes": JS_RUNTIMES} if JS_RUNTIMES else {}
 
 FORMATS = FORMAT_MAP_FFMPEG if HAS_FFMPEG else FORMAT_MAP
@@ -217,7 +224,7 @@ def do_download(url, save_dir, fmt, subs, status_ph, done_ph):
             }]
         else:
             # Sans ffmpeg : on garde le format audio natif (webm/m4a)
-            ydl_opts["format"] = "bestaudio"
+            ydl_opts["format"] = "bestaudio/best"
     elif HAS_FFMPEG:
         ydl_opts["merge_output_format"] = "mp4"
 
@@ -228,10 +235,18 @@ def do_download(url, save_dir, fmt, subs, status_ph, done_ph):
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info  = ydl.extract_info(url, download=True)
             title = info.get("title", "vidéo")
-        done_ph.markdown(
-            f'<div class="status-box">✦ Terminé !\n→ "{title}"\n→ Sauvegardé dans : {save_dir}</div>',
-            unsafe_allow_html=True,
-        )
+        downloads = info.get("requested_downloads") or []
+        filepath  = downloads[-1].get("filepath") if downloads else None
+        with done_ph.container():
+            st.markdown(
+                f'<div class="status-box">✦ Terminé !\n→ "{title}"\n→ Sauvegardé dans : {save_dir}</div>',
+                unsafe_allow_html=True,
+            )
+            # En ligne, le fichier est sur le serveur : on le renvoie au navigateur
+            if filepath and os.path.exists(filepath):
+                with open(filepath, "rb") as f:
+                    st.download_button("💾  Enregistrer sur mon appareil", f.read(),
+                                       file_name=os.path.basename(filepath))
     except Exception as e:
         done_ph.markdown(
             f'<div class="error-box">✘ Erreur : {e}</div>',
